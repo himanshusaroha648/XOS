@@ -1,4 +1,8 @@
-from aiohttp import (ClientResponseError, ClientSession, ClientTimeout)
+from aiohttp import (
+    ClientResponseError,
+    ClientSession,
+    ClientTimeout
+)
 from aiohttp_socks import ProxyConnector
 from fake_useragent import FakeUserAgent
 from eth_account import Account
@@ -14,8 +18,8 @@ class XOS:
         self.headers = {
             "Accept": "application/json, text/plain, */*",
             "Accept-Language": "id-ID,id;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Origin": "https://xlink.com",
-            "Referer": "https://xlink.com/",
+            "Origin": "https://x.ink",
+            "Referer": "https://x.ink/",
             "Sec-Fetch-Dest": "empty",
             "Sec-Fetch-Mode": "cors",
             "Sec-Fetch-Site": "same-site",
@@ -41,7 +45,7 @@ class XOS:
         {Fore.GREEN + Style.BRIGHT}Auto Claim {Fore.BLUE + Style.BRIGHT}XOS - BOT
             """
             f"""
-        {Fore.GREEN + Style.BRIGHT}Join For More Scripts: {Fore.YELLOW + Style.BRIGHT}(https://t.me/D4rkCipherX)
+        {Fore.GREEN + Style.BRIGHT}Join For More Scripts: {Fore.YELLOW + Style.BRIGHT}(https://t.me/Bilalstudio2)
             """
         )
 
@@ -110,7 +114,6 @@ class XOS:
             address = account.address
             return address
         except Exception as e:
-            self.log(f"{Fore.RED + Style.BRIGHT}Error generating address: {e}{Style.RESET_ALL}")
             return None
     
     def generate_payload(self, account: str, address: str, message: str):
@@ -126,7 +129,6 @@ class XOS:
             }
             return payload
         except Exception as e:
-            self.log(f"{Fore.RED + Style.BRIGHT}Error generating payload: {e}{Style.RESET_ALL}")
             return None
     
     def mask_account(self, account):
@@ -155,7 +157,7 @@ class XOS:
                 print(f"{Fore.RED + Style.BRIGHT}Invalid input. Enter a number (1, 2 or 3).{Style.RESET_ALL}")
 
     async def get_message(self, address: str, proxy=None, retries=5):
-        url = f"https://api.xlink.com/v1/get-eth-claim-signature?walletAddress={address}"
+        url = f"https://api.x.ink/v1/get-sign-message2?walletAddress={address}"
         for attempt in range(retries):
             connector = ProxyConnector.from_url(proxy) if proxy else None
             try:
@@ -169,16 +171,11 @@ class XOS:
                     await asyncio.sleep(5)
                     continue
                 
-                self.log(f"{Fore.RED + Style.BRIGHT}Error getting message: {str(e)}{Style.RESET_ALL}")
                 return None
     
     async def verify_signature(self, account: str, address: str, message: str, proxy=None, retries=5):
-        url = "https://api.xlink.com/v1/verify-signature"
-        payload = self.generate_payload(account, address, message)
-        if not payload:
-            return None
-            
-        data = json.dumps(payload)
+        url = "https://api.x.ink/v1/verify-signature2"
+        data = json.dumps(self.generate_payload(account, address, message))
         headers = {
             **self.headers,
             "Content-Length": str(len(data)),
@@ -197,11 +194,10 @@ class XOS:
                     await asyncio.sleep(5)
                     continue
 
-                self.log(f"{Fore.RED + Style.BRIGHT}Error verifying signature: {str(e)}{Style.RESET_ALL}")
                 return None
     
     async def user_data(self, token: str, proxy=None, retries=5):
-        url = "https://api.xlink.com/v1/me"
+        url = "https://api.x.ink/v1/me"
         headers = {
             **self.headers,
             "authorization": f"Bearer {token}"
@@ -219,11 +215,10 @@ class XOS:
                     await asyncio.sleep(5)
                     continue
                 
-                self.log(f"{Fore.RED + Style.BRIGHT}Error getting user data: {str(e)}{Style.RESET_ALL}")
                 return None
             
     async def claim_checkin(self, token: str, proxy=None, retries=5):
-        url = "https://api.xlink.com/v1/check-in"
+        url = "https://api.x.ink/v1/check-in"
         headers = {
             **self.headers,
             "authorization": f"Bearer {token}",
@@ -242,11 +237,10 @@ class XOS:
                     await asyncio.sleep(5)
                     continue
 
-                self.log(f"{Fore.RED + Style.BRIGHT}Error claiming check-in: {str(e)}{Style.RESET_ALL}")
                 return None
             
     async def perform_draw(self, token: str, proxy=None, retries=5):
-        url = "https://api.xlink.com/v1/draw"
+        url = "https://api.x.ink/v1/draw"
         headers = {
             **self.headers,
             "authorization": f"Bearer {token}",
@@ -265,54 +259,39 @@ class XOS:
                     await asyncio.sleep(5)
                     continue
 
-                self.log(f"{Fore.RED + Style.BRIGHT}Error performing draw: {str(e)}{Style.RESET_ALL}")
                 return None
             
     async def process_get_nonce(self, address: str, use_proxy: bool):
         proxy = self.get_next_proxy_for_account(address) if use_proxy else None
         message = None
-        retry_count = 0
-        max_retries = 3
-        
-        while message is None and retry_count < max_retries:
+        while message is None:
             message = await self.get_message(address, proxy)
             if not message:
                 self.log(
                     f"{Fore.CYAN + Style.BRIGHT}Status  :{Style.RESET_ALL}"
-                    f"{Fore.RED + Style.BRIGHT} GET Nonce Failed (Attempt {retry_count+1}/{max_retries}) {Style.RESET_ALL}"
+                    f"{Fore.RED + Style.BRIGHT} GET Nonce Failed {Style.RESET_ALL}"
                 )
                 proxy = self.rotate_proxy_for_account(address) if use_proxy else None
                 await asyncio.sleep(5)
-                retry_count += 1
                 continue
             
             return message
-        
-        self.log(
-            f"{Fore.CYAN + Style.BRIGHT}Status  :{Style.RESET_ALL}"
-            f"{Fore.RED + Style.BRIGHT} Failed to get nonce after {max_retries} attempts {Style.RESET_ALL}"
-        )
-        return None
             
     async def process_get_token(self, account: str, address: str, use_proxy: bool):
         message = await self.process_get_nonce(address, use_proxy)
         if message:
             proxy = self.get_next_proxy_for_account(address) if use_proxy else None
-            
-            retry_count = 0
-            max_retries = 3
+
             token = None
-            
-            while token is None and retry_count < max_retries:
+            while token is None:
                 token = await self.verify_signature(account, address, message, proxy)
                 if not token:
                     self.log(
                         f"{Fore.CYAN + Style.BRIGHT}Status  :{Style.RESET_ALL}"
-                        f"{Fore.RED + Style.BRIGHT} Login Failed (Attempt {retry_count+1}/{max_retries}) {Style.RESET_ALL}"
+                        f"{Fore.RED + Style.BRIGHT} Login Failed {Style.RESET_ALL}"
                     )
                     proxy = self.rotate_proxy_for_account(address) if use_proxy else None
                     await asyncio.sleep(5)
-                    retry_count += 1
                     continue
 
                 self.log(
@@ -320,27 +299,14 @@ class XOS:
                     f"{Fore.GREEN + Style.BRIGHT} Login Success {Style.RESET_ALL}"
                 )
                 return token
-            
-            self.log(
-                f"{Fore.CYAN + Style.BRIGHT}Status  :{Style.RESET_ALL}"
-                f"{Fore.RED + Style.BRIGHT} Failed to login after {max_retries} attempts {Style.RESET_ALL}"
-            )
-        return None
 
     async def process_accounts(self, account: str, address, use_proxy: bool):
-        if not address:
-            self.log(
-                f"{Fore.CYAN + Style.BRIGHT}Status  :{Style.RESET_ALL}"
-                f"{Fore.RED + Style.BRIGHT} Invalid private key {Style.RESET_ALL}"
-            )
-            return
-
         token = await self.process_get_token(account, address, use_proxy)
         if token:
             proxy = self.get_next_proxy_for_account(address) if use_proxy else None
             self.log(
                 f"{Fore.CYAN + Style.BRIGHT}Proxy   :{Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT} {proxy if proxy else 'None'} {Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} {proxy} {Style.RESET_ALL}"
             )
 
             balance = "N/A"
@@ -356,9 +322,9 @@ class XOS:
             )
 
             claim = await self.claim_checkin(token, proxy)
-            if claim and claim.get("success", False):
-                days = claim.get('check_in_count', 0)
-                reward = claim.get('pointsEarned', 0)
+            if claim.get("success", False):
+                days = claim['check_in_count']
+                reward = claim['pointsEarned']
                 self.log(
                     f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
                     f"{Fore.WHITE + Style.BRIGHT} Day {days} {Style.RESET_ALL}"
@@ -367,14 +333,13 @@ class XOS:
                     f"{Fore.CYAN + Style.BRIGHT}Reward{Style.RESET_ALL}"
                     f"{Fore.WHITE + Style.BRIGHT} {reward} PTS{Style.RESET_ALL}"
                 )
-            elif claim:
-                error_msg = claim.get("error", "Unknown error")
-                if error_msg == "Already checked in today":
+            else:
+                if claim.get("error") == "Already checked in today":
                     self.log(
                         f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
                         f"{Fore.YELLOW + Style.BRIGHT} Already Claimed {Style.RESET_ALL}"
                     )
-                elif error_msg == "Please follow Twitter or join Discord first":
+                elif claim.get("error") == "Please follow Twitter or join Discord first":
                     self.log(
                         f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
                         f"{Fore.YELLOW + Style.BRIGHT} Not Eligible, {Style.RESET_ALL}"
@@ -383,13 +348,8 @@ class XOS:
                 else:
                     self.log(
                         f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
-                        f"{Fore.RED + Style.BRIGHT} Error: {error_msg} {Style.RESET_ALL}"
+                        f"{Fore.RED + Style.BRIGHT} Unknown Error {Style.RESET_ALL}"
                     )
-            else:
-                self.log(
-                    f"{Fore.CYAN + Style.BRIGHT}Check-In:{Style.RESET_ALL}"
-                    f"{Fore.RED + Style.BRIGHT} Failed to claim {Style.RESET_ALL}"
-                )
 
             if current_draw > 0:
                 self.log(
@@ -403,8 +363,8 @@ class XOS:
                     count += 1
 
                     draw = await self.perform_draw(token, proxy)
-                    if draw and draw.get("message") == "Draw successful":
-                        reward = draw.get('pointsEarned', 0)
+                    if draw.get("message") == "Draw successful":
+                        reward = draw['pointsEarned']
                         self.log(
                             f"{Fore.MAGENTA + Style.BRIGHT}    >{Style.RESET_ALL}"
                             f"{Fore.WHITE + Style.BRIGHT} {count} {Style.RESET_ALL}"
@@ -413,13 +373,11 @@ class XOS:
                             f"{Fore.CYAN + Style.BRIGHT}Reward{Style.RESET_ALL}"
                             f"{Fore.WHITE + Style.BRIGHT} {reward} PTS {Style.RESET_ALL}"
                         )
-                        current_draw -= 1
                     else:
-                        error_msg = draw.get("error", "Unknown error") if draw else "Failed to draw"
                         self.log(
                             f"{Fore.MAGENTA + Style.BRIGHT}    >{Style.RESET_ALL}"
                             f"{Fore.WHITE + Style.BRIGHT} {count} {Style.RESET_ALL}"
-                            f"{Fore.RED + Style.BRIGHT}Failed: {error_msg}{Style.RESET_ALL}"
+                            f"{Fore.RED + Style.BRIGHT}Failed{Style.RESET_ALL}"
                         )
                         break
             else:
@@ -430,15 +388,67 @@ class XOS:
 
     async def main(self):
         try:
-            if not os.path.exists('accounts.txt'):
-                self.log(f"{Fore.RED + Style.BRIGHT}File 'accounts.txt' Not Found.{Style.RESET_ALL}")
-                self.log(f"{Fore.YELLOW + Style.BRIGHT}Creating empty accounts.txt file...{Style.RESET_ALL}")
-                with open('accounts.txt', 'w') as f:
-                    f.write("")
-                self.log(f"{Fore.GREEN + Style.BRIGHT}Please add your private keys to accounts.txt (one per line) and restart.{Style.RESET_ALL}")
-                return
-                
             with open('accounts.txt', 'r') as file:
                 accounts = [line.strip() for line in file if line.strip()]
+
+            use_proxy_choice = self.print_question()
+
+            use_proxy = False
+            if use_proxy_choice in [1, 2]:
+                use_proxy = True
+
+            while True:
+                self.clear_terminal()
+                self.welcome()
+                self.log(
+                    f"{Fore.GREEN + Style.BRIGHT}Account's Total: {Style.RESET_ALL}"
+                    f"{Fore.WHITE + Style.BRIGHT}{len(accounts)}{Style.RESET_ALL}"
+                )
+
+                if use_proxy:
+                    await self.load_proxies(use_proxy_choice)
+
+                separator = "=" * 25
+                for account in accounts:
+                    if account:
+                        address = self.generate_address(account)
+                        self.log(
+                            f"{Fore.CYAN + Style.BRIGHT}{separator}[{Style.RESET_ALL}"
+                            f"{Fore.WHITE + Style.BRIGHT} {self.mask_account(address)} {Style.RESET_ALL}"
+                            f"{Fore.CYAN + Style.BRIGHT}]{separator}{Style.RESET_ALL}"
+                        )
+                        account = await self.process_accounts(account, address, use_proxy)
+
+                self.log(f"{Fore.CYAN + Style.BRIGHT}={Style.RESET_ALL}"*72)
                 
-            if not ac
+                delay = 12 * 60 * 60
+                while delay > 0:
+                    formatted_time = self.format_seconds(delay)
+                    print(
+                        f"{Fore.CYAN+Style.BRIGHT}[ Wait for{Style.RESET_ALL}"
+                        f"{Fore.WHITE+Style.BRIGHT} {formatted_time} {Style.RESET_ALL}"
+                        f"{Fore.CYAN+Style.BRIGHT}... ]{Style.RESET_ALL}"
+                        f"{Fore.WHITE+Style.BRIGHT} | {Style.RESET_ALL}"
+                        f"{Fore.YELLOW+Style.BRIGHT}All Accounts Have Been Processed...{Style.RESET_ALL}",
+                        end="\r",
+                        flush=True
+                    )
+                    await asyncio.sleep(1)
+                    delay -= 1
+
+        except FileNotFoundError:
+            self.log(f"{Fore.RED}File 'accounts.txt' Not Found.{Style.RESET_ALL}")
+            return
+        except Exception as e:
+            self.log(f"{Fore.RED+Style.BRIGHT}Error: {e}{Style.RESET_ALL}")
+
+if __name__ == "__main__":
+    try:
+        bot = XOS()
+        asyncio.run(bot.main())
+    except KeyboardInterrupt:
+        print(
+            f"{Fore.CYAN + Style.BRIGHT}[ {datetime.now().astimezone(wib).strftime('%x %X %Z')} ]{Style.RESET_ALL}"
+            f"{Fore.WHITE + Style.BRIGHT} | {Style.RESET_ALL}"
+            f"{Fore.RED + Style.BRIGHT}[ EXIT ] XOS - BOT{Style.RESET_ALL}                                       "                              
+        )
