@@ -170,12 +170,13 @@ class XOSWalletClient:
             self.log(f"{Fore.RED + Style.BRIGHT}Signature verification failed: {e}{Style.RESET_ALL}")
             return None
 
-    def save_to_account_file(self, wallet_address, private_key):
+    def save_to_account_file(self, wallet_address, private_key, token=None):
         """Save successful login credentials to account.txt"""
         try:
             with open("account.txt", "a") as f:
                 f.write(f"Address: {wallet_address}\n")
                 f.write(f"Private Key: {private_key}\n")
+                # Save token only if specified by caller
                 f.write("=" * 50 + "\n")
             self.log(f"{Fore.GREEN + Style.BRIGHT}Credentials saved to account.txt{Style.RESET_ALL}")
             return True
@@ -446,33 +447,154 @@ async def run_with_private_key(private_key):
     
     client.log(f"{Fore.GREEN + Style.BRIGHT}Process completed. Thank you for using XOS Wallet Client!{Style.RESET_ALL}")
 
+async def process_multiple_keys(keys):
+    """Process multiple private keys from a list"""
+    client = XOSWalletClient()
+    client.welcome()
+
+    total_keys = len(keys)
+    client.log(f"{Fore.GREEN + Style.BRIGHT}Found {total_keys} keys to process{Style.RESET_ALL}")
+    
+    separator = "=" * 30
+    for idx, private_key in enumerate(keys):
+        if private_key:
+            # Remove whitespace and newlines
+            private_key = private_key.strip()
+            
+            client.log(
+                f"{Fore.CYAN + Style.BRIGHT}{separator}[{Style.RESET_ALL}"
+                f"{Fore.WHITE + Style.BRIGHT} Account {idx+1}/{total_keys} {Style.RESET_ALL}"
+                f"{Fore.CYAN + Style.BRIGHT}]{separator}{Style.RESET_ALL}"
+            )
+            
+            # Login with private key to get token
+            token = client.login_with_private_key(private_key)
+            
+            if token:
+                # Process the account with the obtained token
+                await client.process_account(token)
+            else:
+                client.log(f"{Fore.RED + Style.BRIGHT}Login failed for account {idx+1}. Unable to process.{Style.RESET_ALL}")
+    
+    client.log(f"{Fore.GREEN + Style.BRIGHT}All accounts have been processed. Thank you for using XOS Wallet Client!{Style.RESET_ALL}")
+
+def extract_private_keys_from_account_file():
+    """Extract private keys from account.txt file"""
+    keys = []
+    
+    try:
+        if not os.path.exists("account.txt"):
+            return keys
+            
+        with open("account.txt", "r") as file:
+            lines = file.readlines()
+            
+        for line in lines:
+            # Extract private keys - look for lines with "Private Key: " prefix
+            if line.strip().startswith("Private Key:"):
+                # Extract the key part after "Private Key: "
+                key = line.strip()[len("Private Key: "):]
+                # Skip if already in the list to avoid duplicates
+                if key not in keys:
+                    keys.append(key)
+                    
+        return keys
+    except Exception as e:
+        print(f"{Fore.RED + Style.BRIGHT}Error reading account.txt: {str(e)}{Style.RESET_ALL}")
+        return []
+
 def main():
     """Main function to handle the XOS wallet client"""
     client = XOSWalletClient()
     client.welcome()
     
-    print(f"{Fore.YELLOW + Style.BRIGHT}Enter your EVM wallet private key to login to XOS{Style.RESET_ALL}")
-    print(f"{Fore.WHITE}(Without 0x prefix is also accepted){Style.RESET_ALL}\n")
-    
     try:
         import sys
-        # Check if private key was provided as command line argument
-        if len(sys.argv) > 1:
+        import os
+        
+        # Check if argument is provided to use account.txt
+        if len(sys.argv) > 1 and sys.argv[1] == "--account":
+            # Process keys from account.txt file
+            keys = extract_private_keys_from_account_file()
+            
+            if keys:
+                client.log(f"{Fore.GREEN + Style.BRIGHT}Loading {len(keys)} private keys from account.txt{Style.RESET_ALL}")
+                asyncio.run(process_multiple_keys(keys))
+            else:
+                client.log(f"{Fore.YELLOW + Style.BRIGHT}No private keys found in account.txt{Style.RESET_ALL}")
+            return
+        
+        # Check if argument is provided to use keys.txt
+        elif len(sys.argv) > 1 and sys.argv[1] == "--file":
+            # Process keys from keys.txt file
+            if os.path.exists("keys.txt"):
+                with open("keys.txt", "r") as file:
+                    keys = [line.strip() for line in file if line.strip()]
+                
+                if keys:
+                    client.log(f"{Fore.GREEN + Style.BRIGHT}Loading {len(keys)} keys from keys.txt{Style.RESET_ALL}")
+                    asyncio.run(process_multiple_keys(keys))
+                else:
+                    client.log(f"{Fore.YELLOW + Style.BRIGHT}No keys found in keys.txt{Style.RESET_ALL}")
+            else:
+                client.log(f"{Fore.RED + Style.BRIGHT}File keys.txt not found. Please create it and add your private keys (one per line).{Style.RESET_ALL}")
+            return
+                
+        # Check if a single private key was provided as argument
+        elif len(sys.argv) > 1:
             private_key = sys.argv[1]
-            print(f"Using provided private key: {private_key[:5]}...{private_key[-5:]}")
+            client.log(f"{Fore.GREEN + Style.BRIGHT}Using provided private key: {private_key[:5]}...{private_key[-5:]}{Style.RESET_ALL}")
             asyncio.run(run_with_private_key(private_key))
             return
             
-        # Interactive mode
-        while True:
-            private_key = input(f"{Fore.CYAN + Style.BRIGHT}Enter private key: {Style.RESET_ALL}")
-            if not private_key:
-                print(f"{Fore.YELLOW}No private key entered. Please try again.{Style.RESET_ALL}")
-                continue
+        # No arguments - show options
+        print(f"\n{Fore.YELLOW + Style.BRIGHT}Choose an option:{Style.RESET_ALL}")
+        print(f"{Fore.WHITE + Style.BRIGHT}1. Process a single private key{Style.RESET_ALL}")
+        print(f"{Fore.WHITE + Style.BRIGHT}2. Process multiple keys from keys.txt{Style.RESET_ALL}")
+        print(f"{Fore.WHITE + Style.BRIGHT}3. Process keys from account.txt{Style.RESET_ALL}")
+        
+        choice = input(f"\n{Fore.CYAN + Style.BRIGHT}Enter your choice (1/2/3): {Style.RESET_ALL}")
+        
+        if choice == "1":
+            # Interactive mode for a single key
+            print(f"\n{Fore.YELLOW + Style.BRIGHT}Enter your EVM wallet private key to login to XOS{Style.RESET_ALL}")
+            print(f"{Fore.WHITE}(Without 0x prefix is also accepted){Style.RESET_ALL}\n")
+            
+            while True:
+                private_key = input(f"{Fore.CYAN + Style.BRIGHT}Enter private key: {Style.RESET_ALL}")
+                if not private_key:
+                    print(f"{Fore.YELLOW}No private key entered. Please try again.{Style.RESET_ALL}")
+                    continue
+                    
+                # Try to login with the provided private key
+                asyncio.run(run_with_private_key(private_key))
+                break
                 
-            # Try to login with the provided private key
-            asyncio.run(run_with_private_key(private_key))
-            break
+        elif choice == "2":
+            # Process from keys.txt
+            if os.path.exists("keys.txt"):
+                with open("keys.txt", "r") as file:
+                    keys = [line.strip() for line in file if line.strip()]
+                
+                if keys:
+                    client.log(f"{Fore.GREEN + Style.BRIGHT}Loading {len(keys)} keys from keys.txt{Style.RESET_ALL}")
+                    asyncio.run(process_multiple_keys(keys))
+                else:
+                    client.log(f"{Fore.YELLOW + Style.BRIGHT}No keys found in keys.txt{Style.RESET_ALL}")
+            else:
+                client.log(f"{Fore.RED + Style.BRIGHT}File keys.txt not found. Please create it and add your private keys (one per line).{Style.RESET_ALL}")
+                
+        elif choice == "3":
+            # Process from account.txt
+            keys = extract_private_keys_from_account_file()
+            
+            if keys:
+                client.log(f"{Fore.GREEN + Style.BRIGHT}Loading {len(keys)} private keys from account.txt{Style.RESET_ALL}")
+                asyncio.run(process_multiple_keys(keys))
+            else:
+                client.log(f"{Fore.YELLOW + Style.BRIGHT}No private keys found in account.txt{Style.RESET_ALL}")
+        else:
+            client.log(f"{Fore.RED + Style.BRIGHT}Invalid choice. Please try again.{Style.RESET_ALL}")
                 
     except KeyboardInterrupt:
         client.log(f"{Fore.YELLOW + Style.BRIGHT}Process stopped by user.{Style.RESET_ALL}")
