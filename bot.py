@@ -475,6 +475,23 @@ async def process_multiple_keys(keys):
                 await client.process_account(token)
             else:
                 client.log(f"{Fore.RED + Style.BRIGHT}Login failed for account {idx+1}. Unable to process.{Style.RESET_ALL}")
+                
+            # Add a delay between accounts (5-10 seconds)
+            if idx < len(keys) - 1:  # If not the last account
+                # Generate a random delay between 5-10 seconds
+                import random
+                delay_seconds = random.randint(5, 10)
+                client.log(f"{Fore.YELLOW + Style.BRIGHT}Waiting {delay_seconds} seconds before processing next account...{Style.RESET_ALL}")
+                
+                # Show countdown timer
+                for remaining in range(delay_seconds, 0, -1):
+                    print(
+                        f"{Fore.YELLOW + Style.BRIGHT}Next account in {remaining} seconds...{Style.RESET_ALL}",
+                        end="\r", flush=True
+                    )
+                    await asyncio.sleep(1)
+                
+                print(" " * 50, end="\r", flush=True)  # Clear the countdown line
     
     client.log(f"{Fore.GREEN + Style.BRIGHT}All accounts have been processed. Thank you for using XOS Wallet Client!{Style.RESET_ALL}")
 
