@@ -12,6 +12,8 @@ import pytz
 from aiohttp import ClientSession, ClientTimeout
 from aiohttp_socks import ProxyConnector
 from fake_useragent import FakeUserAgent
+import time
+import random
 
 # Initialize colorama
 init(autoreset=True)
@@ -126,8 +128,8 @@ class XOSWalletClient:
             self.log(f"{Fore.RED + Style.BRIGHT}Failed to fetch identity data: {e}{Style.RESET_ALL}")
             return None
 
-    def get_sign_message(self, wallet_address):
-        """Get message that needs to be signed"""
+    def get_sign_message(self, wallet_address, max_retries=3, initial_delay=5):
+        """Get message that needs to be signed with exponential backoff"""
         params = {
             "walletAddress": wallet_address
         }
@@ -137,14 +139,30 @@ class XOSWalletClient:
             "referer": "https://x.ink/",
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
         }
-        try:
-            response = requests.get(f"{self.X_INK_API}/get-sign-message2", params=params, headers=headers)
-            response.raise_for_status()
-            self.log(f"{Fore.GREEN + Style.BRIGHT}Successfully fetched sign message.{Style.RESET_ALL}")
-            return response.json()
-        except requests.RequestException as e:
-            self.log(f"{Fore.RED + Style.BRIGHT}Failed to fetch sign message: {e}{Style.RESET_ALL}")
-            return None
+        
+        for attempt in range(max_retries):
+            try:
+                # Add delay between attempts
+                if attempt > 0:
+                    delay = initial_delay * (2 ** (attempt - 1))  # Exponential backoff
+                    self.log(f"{Fore.YELLOW + Style.BRIGHT}Waiting {delay} seconds before retry...{Style.RESET_ALL}")
+                    time.sleep(delay)
+                
+                response = requests.get(f"{self.X_INK_API}/get-sign-message2", params=params, headers=headers)
+                
+                if response.status_code == 429:
+                    self.log(f"{Fore.YELLOW + Style.BRIGHT}Rate limit hit. Attempt {attempt + 1}/{max_retries}{Style.RESET_ALL}")
+                    continue
+                    
+                response.raise_for_status()
+                self.log(f"{Fore.GREEN + Style.BRIGHT}Successfully fetched sign message.{Style.RESET_ALL}")
+                return response.json()
+                
+            except requests.RequestException as e:
+                if attempt == max_retries - 1:
+                    self.log(f"{Fore.RED + Style.BRIGHT}Failed to fetch sign message after {max_retries} attempts: {e}{Style.RESET_ALL}")
+                    return None
+                self.log(f"{Fore.YELLOW + Style.BRIGHT}Attempt {attempt + 1} failed: {e}{Style.RESET_ALL}")
 
     def verify_signature(self, wallet_address, sign_message, signature):
         """Verify the signature with the server"""
@@ -279,13 +297,13 @@ class XOSWalletClient:
                     async with session.get(url=url, headers=headers) as response:
                         response.raise_for_status()
                         result = await response.json()
-                        return result['data']
+                        if isinstance(result, dict) and 'data' in result:
+                            return result['data']
+                        return result
             except Exception as e:
                 if attempt < retries - 1:
                     await asyncio.sleep(2)
                     continue
-                
-                self.log(f"{Fore.RED + Style.BRIGHT}Failed to get user data: {e}{Style.RESET_ALL}")
                 return None
             
     async def claim_checkin(self, token, proxy=None, retries=3):
@@ -434,66 +452,66 @@ class XOSWalletClient:
 async def run_with_private_key(private_key):
     """Run the XOS client with a single private key"""
     client = XOSWalletClient()
-    client.welcome()
     
     # Login with private key to get token
     token = client.login_with_private_key(private_key)
     
     if token:
         # Process the account with the obtained token
-        await client.process_account(token)
+        result = await client.process_account(token)
+        return result
     else:
         client.log(f"{Fore.RED + Style.BRIGHT}Login failed. Unable to process account.{Style.RESET_ALL}")
-    
-    client.log(f"{Fore.GREEN + Style.BRIGHT}Process completed. Thank you for using XOS Wallet Client!{Style.RESET_ALL}")
+        return False
 
 async def process_multiple_keys(keys):
-    """Process multiple private keys from a list"""
+    """Process multiple private keys with increased delay"""
     client = XOSWalletClient()
-    client.welcome()
-
-    total_keys = len(keys)
-    client.log(f"{Fore.GREEN + Style.BRIGHT}Found {total_keys} keys to process{Style.RESET_ALL}")
+    client.welcome()  # Show welcome banner only once at the start
     
-    separator = "=" * 30
-    for idx, private_key in enumerate(keys):
-        if private_key:
-            # Remove whitespace and newlines
-            private_key = private_key.strip()
-            
-            client.log(
-                f"{Fore.CYAN + Style.BRIGHT}{separator}[{Style.RESET_ALL}"
-                f"{Fore.WHITE + Style.BRIGHT} Account {idx+1}/{total_keys} {Style.RESET_ALL}"
-                f"{Fore.CYAN + Style.BRIGHT}]{separator}{Style.RESET_ALL}"
-            )
-            
-            # Login with private key to get token
-            token = client.login_with_private_key(private_key)
-            
-            if token:
-                # Process the account with the obtained token
-                await client.process_account(token)
+    total_accounts = len(keys)
+    successful = 0
+    failed = 0
+    total_points = 0
+    
+    print(f"\n{Fore.CYAN + Style.BRIGHT}{'=' * 60}[ Starting Process ]{'=' * 60}{Style.RESET_ALL}")
+    print(f"{Fore.WHITE + Style.BRIGHT}Total Accounts to Process: {total_accounts}{Style.RESET_ALL}\n")
+    
+    for index, private_key in enumerate(keys, 1):
+        print(f"\n{Fore.CYAN + Style.BRIGHT}{'=' * 60}[ Account {index}/{total_accounts} ]{'=' * 60}{Style.RESET_ALL}\n")
+        
+        try:
+            result = await run_with_private_key(private_key)
+            if result:
+                successful += 1
+                # Try to get points earned if available
+                try:
+                    user_data = await client.user_data(result)
+                    if user_data:
+                        points = user_data.get("points", 0)
+                        total_points += points
+                except:
+                    pass
             else:
-                client.log(f"{Fore.RED + Style.BRIGHT}Login failed for account {idx+1}. Unable to process.{Style.RESET_ALL}")
-                
-            # Add a delay between accounts (5-10 seconds)
-            if idx < len(keys) - 1:  # If not the last account
-                # Generate a random delay between 5-10 seconds
-                import random
-                delay_seconds = random.randint(5, 10)
-                client.log(f"{Fore.YELLOW + Style.BRIGHT}Waiting {delay_seconds} seconds before processing next account...{Style.RESET_ALL}")
-                
-                # Show countdown timer
-                for remaining in range(delay_seconds, 0, -1):
-                    print(
-                        f"{Fore.YELLOW + Style.BRIGHT}Next account in {remaining} seconds...{Style.RESET_ALL}",
-                        end="\r", flush=True
-                    )
-                    await asyncio.sleep(1)
-                
-                print(" " * 50, end="\r", flush=True)  # Clear the countdown line
+                failed += 1
+        except Exception as e:
+            client.log(f"{Fore.RED + Style.BRIGHT}Error processing account {index}: {e}{Style.RESET_ALL}")
+            failed += 1
+        
+        # Add longer delay between accounts (15-30 seconds)
+        if index < total_accounts:
+            delay = random.randint(15, 30)
+            client.log(f"{Fore.YELLOW + Style.BRIGHT}Waiting {delay} seconds before processing next account.{Style.RESET_ALL}")
+            await asyncio.sleep(delay)
     
-    client.log(f"{Fore.GREEN + Style.BRIGHT}All accounts have been processed. Thank you for using XOS Wallet Client!{Style.RESET_ALL}")
+    # Print detailed summary
+    print(f"\n{Fore.CYAN + Style.BRIGHT}{'=' * 60}[ Final Summary ]{'=' * 60}{Style.RESET_ALL}")
+    print(f"{Fore.GREEN + Style.BRIGHT}✓ Successfully Processed: {successful} accounts{Style.RESET_ALL}")
+    print(f"{Fore.RED + Style.BRIGHT}✗ Failed to Process: {failed} accounts{Style.RESET_ALL}")
+    print(f"{Fore.YELLOW + Style.BRIGHT}📊 Success Rate: {(successful/total_accounts)*100:.1f}%{Style.RESET_ALL}")
+    if total_points > 0:
+        print(f"{Fore.MAGENTA + Style.BRIGHT}💰 Total Points Earned: {total_points} PTS{Style.RESET_ALL}")
+    print(f"\n{Fore.CYAN + Style.BRIGHT}{'=' * 60}[ Process Completed ]{'=' * 60}{Style.RESET_ALL}")
 
 def extract_private_keys_from_account_file():
     """Extract private keys from account.txt file"""
