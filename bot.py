@@ -106,12 +106,12 @@ class XOSWalletClient:
             self.log(f"{Fore.RED + Style.BRIGHT}Failed to fetch wallet data: {e}{Style.RESET_ALL}")
             return None
 
-    def get_identity(self, wallet_address, client_id):
-        """Get identity for a wallet address"""
+    def get_identity(self, wallet_address, client_id, max_retries=3, initial_delay=5):
+        """Get identity for a wallet address with retry logic"""
         params = {
             "projectId": self.PROJECT_ID,
             "sender": wallet_address,
-            "clientId": client_id
+            "apiVersion": "2"
         }
         headers = {
             "accept": "*/*",
@@ -119,14 +119,38 @@ class XOSWalletClient:
             "referer": "https://x.ink/",
             "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36"
         }
-        try:
-            response = requests.get(f"{self.BASE_URL}/identity/{wallet_address}", params=params, headers=headers)
-            response.raise_for_status()
-            self.log(f"{Fore.GREEN + Style.BRIGHT}Successfully fetched identity data.{Style.RESET_ALL}")
-            return response.json()
-        except requests.RequestException as e:
-            self.log(f"{Fore.RED + Style.BRIGHT}Failed to fetch identity data: {e}{Style.RESET_ALL}")
-            return None
+        
+        for attempt in range(max_retries):
+            try:
+                if attempt > 0:
+                    delay = initial_delay * (2 ** (attempt - 1))
+                    self.log(f"{Fore.YELLOW + Style.BRIGHT}Waiting {delay} seconds before retry...{Style.RESET_ALL}")
+                    time.sleep(delay)
+                
+                response = requests.get(
+                    f"{self.BASE_URL}/profile/reverse/{wallet_address}",
+                    params=params,
+                    headers=headers
+                )
+                
+                if response.status_code == 429:
+                    self.log(f"{Fore.YELLOW + Style.BRIGHT}Rate limit hit. Attempt {attempt + 1}/{max_retries}{Style.RESET_ALL}")
+                    continue
+                    
+                response.raise_for_status()
+                self.log(f"{Fore.GREEN + Style.BRIGHT}Successfully fetched identity data.{Style.RESET_ALL}")
+                
+                # Return empty dict if response is empty array
+                data = response.json()
+                if data == []:
+                    return {}
+                return data
+                
+            except requests.RequestException as e:
+                if attempt == max_retries - 1:
+                    self.log(f"{Fore.RED + Style.BRIGHT}Failed to fetch identity data after {max_retries} attempts: {e}{Style.RESET_ALL}")
+                    return None
+                self.log(f"{Fore.YELLOW + Style.BRIGHT}Attempt {attempt + 1} failed: {e}{Style.RESET_ALL}")
 
     def get_sign_message(self, wallet_address, max_retries=3, initial_delay=5):
         """Get message that needs to be signed with exponential backoff"""
@@ -142,9 +166,8 @@ class XOSWalletClient:
         
         for attempt in range(max_retries):
             try:
-                # Add delay between attempts
                 if attempt > 0:
-                    delay = initial_delay * (2 ** (attempt - 1))  # Exponential backoff
+                    delay = initial_delay * (2 ** (attempt - 1))
                     self.log(f"{Fore.YELLOW + Style.BRIGHT}Waiting {delay} seconds before retry...{Style.RESET_ALL}")
                     time.sleep(delay)
                 
@@ -177,7 +200,8 @@ class XOSWalletClient:
         payload = {
             "walletAddress": wallet_address,
             "signMessage": sign_message,
-            "signature": "0x" + signature if not signature.startswith("0x") else signature
+            "signature": signature if signature.startswith("0x") else f"0x{signature}",
+            "referrer": "7JPBUS"  # Added referrer as per API payload
         }
         try:
             response = requests.post(url, headers=headers, json=payload)
@@ -225,7 +249,7 @@ class XOSWalletClient:
             
             # Get identity
             identity = self.get_identity(wallet_address, client_id)
-            if not identity:
+            if identity is None:  # Only return None if there was an error
                 self.log(f"{Fore.RED + Style.BRIGHT}Failed to fetch identity. Please try again later.{Style.RESET_ALL}")
                 return None
                 
